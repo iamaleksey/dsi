@@ -180,8 +180,8 @@ handle_cast(Request, St) ->
     {stop, {unexpected_cast, Request}, St}.
 
 
-handle_info(Request, St) ->
-    {stop, {unexpected_info, Request}, St}.
+handle_info(Info, St) ->
+    {stop, {unexpected_info, Info}, St}.
 
 
 code_change(_OldVsn, St, _Extra) ->
