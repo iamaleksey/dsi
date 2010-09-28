@@ -27,12 +27,22 @@
          code_change/3]).
 
 
--type dsi_msg() :: #'dsi_msg'{}.
+-type dsi_msg() :: #dsi_msg{}.
 -type mod_id()  :: non_neg_integer().
 
 
 -define(APP_NAME, dsi).
--define(DRV_NAME, dsi_drv).
+-define(DRV_NAME, "dsi_drv").
+
+-define(DSI_SEND,         0).
+-define(DSI_RECV,         1).
+-define(DSI_GRAB,         2).
+-define(DSI_LINK,         3).
+-define(DSI_UNLINK,       4).
+-define(DSI_IS_CONGESTED, 5).
+
+-define(DSI_STANDARD, 0).
+-define(DSI_LONG,     1).
 
 
 -record(st, {port :: port()}).
@@ -110,6 +120,54 @@ terminate(_Reason, St) ->
     port_close(St#st.port).
 
 
+handle_call({send, ModId, Msg}, _From, St) ->
+    #dsi_msg{
+        hdr = #dsi_hdr{
+            type     = Type,
+            id       = Id,
+            instance = Instance,
+            src      = Src,
+            dst      = Dst,
+            status   = Status,
+            err_info = ErrInfo
+        },
+        body = Body
+    } = Msg,
+    Hdr = <<Type:16, Id:16, Instance:16, Src:8, Dst:8, Status:8, ErrInfo:32>>,
+    port_command(St#st.port, [?DSI_SEND, ModId, Hdr, Body]),
+    {reply, port_reply(), St};
+
+
+handle_call({recv, ModId}, _From, St) ->
+    port_command(St#st.port, [?DSI_RECV, ModId]),
+    {reply, port_reply(), St};
+
+
+handle_call({grab, ModId}, _From, St) ->
+    port_command(St#st.port, [?DSI_GRAB, ModId]),
+    {reply, port_reply(), St};
+
+
+handle_call(link, _From, St) ->
+    port_command(St#st.port, [?DSI_LINK]),
+    {reply, port_reply(), St};
+
+
+handle_call(unlink, _From, St) ->
+    port_command(St#st.port, [?DSI_UNLINK]),
+    {reply, port_reply(), St};
+
+
+handle_call({is_congested, Type}, _From, St) ->
+    Byte =
+        case Type of
+            standard -> ?DSI_STANDARD;
+            long     -> ?DSI_LONG
+        end,
+    port_command(St#st.port, [?DSI_IS_CONGESTED, Byte]),
+    {reply, port_reply(), St};
+
+
 handle_call(Request, _From, St) ->
     {stop, {unexpected_call, Request}, St}.
 
@@ -128,3 +186,14 @@ handle_info(Request, St) ->
 
 code_change(_OldVsn, St, _Extra) ->
     {ok, St}.
+
+
+%% -------------------------------------------------------------------------
+%% private functions
+%% -------------------------------------------------------------------------
+
+
+port_reply() ->
+    receive
+        {dsi_reply, Reply} -> Reply
+    end.
