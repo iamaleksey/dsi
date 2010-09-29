@@ -6,6 +6,9 @@ compile:
 clean:
 	@./rebar clean
 
+test:
+	@./rebar eunit
+
 shell:
 	@erl -pa ../dsi/ebin
 
@@ -21,4 +24,4 @@ buildplt:
 xref:
 	@./rebar xref
 
-.PHONY: all compile clean shell analyze checkplt buildplt xref
+.PHONY: all compile clean test shell analyze checkplt buildplt xref

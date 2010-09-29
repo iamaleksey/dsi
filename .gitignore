@@ -1,3 +1,4 @@
 c_src/*.o
 ebin
 priv/*.so
+.eunit
