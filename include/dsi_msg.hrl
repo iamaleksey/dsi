@@ -6,4 +6,4 @@
                   status   = 0 :: 0..255,          % returned status.
                   err_info = 0 :: 0..4294967295}). % status infromation.
 
--record(dsi_msg, {hdr :: #dsi_hdr{}, body :: binary()}).
+-record(dsi_msg, {hdr :: #dsi_hdr{}, body = <<>> :: binary()}).
