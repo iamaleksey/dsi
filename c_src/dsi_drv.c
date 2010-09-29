@@ -61,7 +61,7 @@ reset_ok_msg_spec(ErlDrvTermData* spec)
 }
 
 static void
-dsi_send(DsiData* dd, char module_id, char* buf, int len)
+dsi_send(DsiData* dd, unsigned char module_id, char* buf, int len)
 {
     MSG* msg;
     u8*  pptr;
@@ -81,7 +81,7 @@ dsi_send(DsiData* dd, char module_id, char* buf, int len)
         memset(pptr, 0, msg->len);
         memcpy(pptr, buf + ERL_HDR_LEN, msg->len);
 
-        if (GCT_send(msg->hdr.dst, &msg->hdr) != 0) {
+        if (GCT_send(module_id, &msg->hdr) != 0) {
             relm(&msg->hdr);
             driver_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
         } else {
