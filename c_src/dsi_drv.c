@@ -38,14 +38,27 @@
 #define DSI_UNLINK       4
 #define DSI_IS_CONGESTED 5
 
+#define DSI_STOP         10
+
 #define ATOM_SPEC_LEN    6
 #define OK_MSG_SPEC_LEN  33
 
 #define ERL_HDR_LEN 13
 
 typedef struct {
-    ErlDrvPort port;
-    ErlDrvTermData* ok_msg_spec;
+    ErlDrvPort        port;
+
+    ErlDrvTermData*   ok_msg_spec;
+
+    ErlDrvThreadOpts* thread_opts;
+    ErlDrvTid         tid;
+    ErlDrvCond*       cond;
+    ErlDrvMutex*      mutex;
+    int               thread_created;
+    int               thread_used;
+
+    int               module_id;
+    int               cmd;
 } DsiData;
 
 ErlDrvTermData* ok_spec    = NULL;
@@ -83,6 +96,68 @@ reset_ok_msg_spec(ErlDrvTermData* spec)
 }
 
 static void
+recv_or_grab(DsiData* dd, unsigned char module_id, unsigned char cmd)
+{
+    MSG* msg;
+    ErlDrvTermData* atom_spec;
+
+    if (cmd == DSI_RECV) {
+        msg = (MSG*) GCT_receive(module_id);
+    } else {
+        msg = (MSG*) GCT_grab(module_id);
+    }
+
+    if (msg != 0) {
+        fill_ok_msg_spec(dd->ok_msg_spec, msg);
+        driver_output_term(dd->port, dd->ok_msg_spec, OK_MSG_SPEC_LEN);
+        reset_ok_msg_spec(dd->ok_msg_spec);
+        confirm_msg(msg);
+    } else {
+        if (cmd == DSI_RECV) {
+            atom_spec = error_spec;
+        } else {
+            atom_spec = empty_spec;
+        }
+
+        driver_output_term(dd->port, atom_spec, ATOM_SPEC_LEN);
+    }
+}
+
+static void*
+thread_loop(void* drv_data)
+{
+    DsiData* dd = (DsiData*) drv_data;
+    int cmd, module_id;
+
+    while (1) {
+        erl_drv_mutex_lock(dd->mutex);
+
+        if (dd->thread_used) {
+            erl_drv_cond_wait(dd->cond, dd->mutex);
+        } else {
+            dd->thread_used = 1;
+        }
+
+        cmd = dd->cmd;
+        module_id = dd->module_id;
+        dd->cmd = 0;
+
+        erl_drv_mutex_unlock(dd->mutex);
+
+        if (cmd == DSI_STOP)
+            break;
+
+        if (cmd == DSI_RECV || cmd == DSI_GRAB) {
+            recv_or_grab(dd, module_id, cmd);
+        }
+    }
+
+    erl_drv_thread_exit(NULL);
+
+    return NULL;
+}
+
+static void
 dsi_send(DsiData* dd, unsigned char module_id, char* buf, int len)
 {
     MSG* msg;
@@ -115,33 +190,20 @@ dsi_send(DsiData* dd, unsigned char module_id, char* buf, int len)
 }
 
 static void
-dsi_recv(DsiData* dd, unsigned char module_id)
+dsi_recv_or_grab(DsiData* dd, unsigned char module_id, unsigned char cmd)
 {
-    MSG* msg;
+    erl_drv_mutex_lock(dd->mutex);
+    dd->cmd = cmd;
+    dd->module_id = module_id;
+    erl_drv_mutex_unlock(dd->mutex);
 
-    if ((msg = (MSG*) GCT_receive(module_id)) != 0) {
-        fill_ok_msg_spec(dd->ok_msg_spec, msg);
-        driver_output_term(dd->port, dd->ok_msg_spec, OK_MSG_SPEC_LEN);
-        reset_ok_msg_spec(dd->ok_msg_spec);
-        confirm_msg(msg);
-    } else {
-        driver_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
+    if (!dd->thread_created) {
+        erl_drv_thread_create("dsi/thread", &dd->tid, thread_loop,
+                (void*) dd, dd->thread_opts);
+        dd->thread_created = 1;
     }
-}
 
-static void
-dsi_grab(DsiData* dd, unsigned char module_id)
-{
-    MSG* msg;
-
-    if ((msg = (MSG*) GCT_grab(module_id)) != 0) {
-        fill_ok_msg_spec(dd->ok_msg_spec, msg);
-        driver_output_term(dd->port, dd->ok_msg_spec, OK_MSG_SPEC_LEN);
-        reset_ok_msg_spec(dd->ok_msg_spec);
-        confirm_msg(msg);
-    } else {
-        driver_output_term(dd->port, empty_spec, ATOM_SPEC_LEN);
-    }
+    erl_drv_cond_signal(dd->cond);
 }
 
 static void
@@ -268,6 +330,26 @@ dsi_start(ErlDrvPort port, char* command)
 
     dd->port = port;
 
+    dd->cmd = 0;
+    dd->module_id = 0;
+    dd->thread_created = 0;
+    dd->thread_used = 0;
+
+    dd->mutex = erl_drv_mutex_create("dsi/mutex");
+
+    if (dd->mutex == NULL)
+        return ERL_DRV_ERROR_GENERAL;
+
+    dd->cond = erl_drv_cond_create("dsi/cond");
+
+    if (dd->cond == NULL)
+        return ERL_DRV_ERROR_GENERAL;
+
+    dd->thread_opts = erl_drv_thread_opts_create("dsi/thread_opts");
+
+    if (dd->thread_opts == NULL)
+        return ERL_DRV_ERROR_GENERAL;
+
     // {dsi_reply, {ok, {dsi_msg, {dsi_hdr, 0, 0, 0, 0, 0, 0, 0}, <<>>}}}.
     dd->ok_msg_spec =
         (ErlDrvTermData*) driver_alloc(OK_MSG_SPEC_LEN * sizeof(ErlDrvTermData));
@@ -333,6 +415,18 @@ dsi_stop(ErlDrvData drv_data)
 {
     DsiData* dd = (DsiData*) drv_data;
 
+    if (dd->thread_created) {
+        erl_drv_mutex_lock(dd->mutex);
+        dd->cmd = DSI_STOP;
+        erl_drv_mutex_unlock(dd->mutex);
+        erl_drv_cond_signal(dd->cond);
+        erl_drv_thread_join(dd->tid, NULL);
+    }
+
+    erl_drv_thread_opts_destroy(dd->thread_opts);
+    erl_drv_mutex_destroy(dd->mutex);
+    erl_drv_cond_destroy(dd->cond);
+
     driver_free((char*) dd->ok_msg_spec);
     driver_free((char*) drv_data);
 }
@@ -348,11 +442,8 @@ dsi_output(ErlDrvData drv_data, char* buf, int len)
             break;
 
         case DSI_RECV:
-            dsi_recv(dd, *(buf + 1));
-            break;
-
         case DSI_GRAB:
-            dsi_grab(dd, *(buf + 1));
+            dsi_recv_or_grab(dd, *(buf + 1), *buf);
             break;
 
         case DSI_LINK:
