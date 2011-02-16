@@ -29,16 +29,14 @@
 -define(MOD_ID, 16#2d).
 -define(MSG,
     #dsi_msg{
-        hdr = #dsi_hdr{
-            type     = 65533,
-            id       = 65534,
-            instance = 65535,
-            src      = 253,
-            dst      = 254,
-            status   = 255,
-            err_info = 4294967295
-        },
-        body = <<1, 2, 3, 4>>
+        type     = 65533,
+        id       = 65534,
+        instance = 65535,
+        src      = 253,
+        dst      = 254,
+        status   = 255,
+        err_info = 4294967295,
+        body     = <<1, 2, 3, 4>>
     }).
 
 

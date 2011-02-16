@@ -41,7 +41,7 @@
 #define DSI_STOP         10
 
 #define ATOM_SPEC_LEN    6
-#define OK_MSG_SPEC_LEN  33
+#define OK_MSG_SPEC_LEN  29
 
 #define ERL_HDR_LEN 13
 
@@ -70,29 +70,29 @@ ErlDrvTermData* true_spec  = NULL;
 static void
 fill_ok_msg_spec(ErlDrvTermData* spec, MSG* msg)
 {
-    spec[9]  = msg->hdr.type;
-    spec[11] = msg->hdr.id;
-    spec[13] = GCT_get_instance(&msg->hdr);
-    spec[15] = msg->hdr.src;
-    spec[17] = msg->hdr.dst;
-    spec[19] = msg->hdr.status;
-    spec[21] = msg->hdr.err_info;
-    spec[25] = (ErlDrvTermData) get_param(msg);
-    spec[26] = msg->len;
+    spec[7]  = msg->hdr.type;
+    spec[9]  = msg->hdr.id;
+    spec[11] = GCT_get_instance(&msg->hdr);
+    spec[13] = msg->hdr.src;
+    spec[15] = msg->hdr.dst;
+    spec[17] = msg->hdr.status;
+    spec[19] = msg->hdr.err_info;
+    spec[21] = (ErlDrvTermData) get_param(msg);
+    spec[22] = msg->len;
 }
 
 static void
 reset_ok_msg_spec(ErlDrvTermData* spec)
 {
+    spec[7]  = 0;
     spec[9]  = 0;
     spec[11] = 0;
     spec[13] = 0;
     spec[15] = 0;
     spec[17] = 0;
     spec[19] = 0;
-    spec[21] = 0;
-    spec[25] = (ErlDrvTermData) NULL;
-    spec[26] = 0;
+    spec[21] = (ErlDrvTermData) NULL;
+    spec[22] = 0;
 }
 
 static void
@@ -350,7 +350,7 @@ dsi_start(ErlDrvPort port, char* command)
     if (dd->thread_opts == NULL)
         return ERL_DRV_ERROR_GENERAL;
 
-    // {dsi_reply, {ok, {dsi_msg, {dsi_hdr, 0, 0, 0, 0, 0, 0, 0}, <<>>}}}.
+    // {dsi_reply, {ok, {dsi_msg, 0, 0, 0, 0, 0, 0, 0, <<>>}}}.
     dd->ok_msg_spec =
         (ErlDrvTermData*) driver_alloc(OK_MSG_SPEC_LEN * sizeof(ErlDrvTermData));
 
@@ -366,46 +366,40 @@ dsi_start(ErlDrvPort port, char* command)
     //         {dsi_msg,
     dd->ok_msg_spec[4] = ERL_DRV_ATOM;
     dd->ok_msg_spec[5] = driver_mk_atom("dsi_msg");
-    //             {dsi_hdr,
-    dd->ok_msg_spec[6] = ERL_DRV_ATOM;
-    dd->ok_msg_spec[7] = driver_mk_atom("dsi_hdr");
-    //                 type,
+    //             type,
+    dd->ok_msg_spec[6] = ERL_DRV_UINT;
+    dd->ok_msg_spec[7] = 0;
+    //             id,
     dd->ok_msg_spec[8] = ERL_DRV_UINT;
     dd->ok_msg_spec[9] = 0;
-    //                 id,
+    //             instance,
     dd->ok_msg_spec[10] = ERL_DRV_UINT;
     dd->ok_msg_spec[11] = 0;
-    //                 instance,
+    //             src,
     dd->ok_msg_spec[12] = ERL_DRV_UINT;
     dd->ok_msg_spec[13] = 0;
-    //                 src,
+    //             dst,
     dd->ok_msg_spec[14] = ERL_DRV_UINT;
     dd->ok_msg_spec[15] = 0;
-    //                 dst,
+    //             status,
     dd->ok_msg_spec[16] = ERL_DRV_UINT;
     dd->ok_msg_spec[17] = 0;
-    //                 status,
+    //             err_info
     dd->ok_msg_spec[18] = ERL_DRV_UINT;
     dd->ok_msg_spec[19] = 0;
-    //                 err_info
-    dd->ok_msg_spec[20] = ERL_DRV_UINT;
-    dd->ok_msg_spec[21] = 0;
-    //             }, dsi_hdr
-    dd->ok_msg_spec[22] = ERL_DRV_TUPLE;
-    dd->ok_msg_spec[23] = 8;
     //             <<>>
-    dd->ok_msg_spec[24] = ERL_DRV_BUF2BINARY;
-    dd->ok_msg_spec[25] = (ErlDrvTermData) NULL;
-    dd->ok_msg_spec[26] = 0;
+    dd->ok_msg_spec[20] = ERL_DRV_BUF2BINARY;
+    dd->ok_msg_spec[21] = (ErlDrvTermData) NULL;
+    dd->ok_msg_spec[22] = 0;
     //         } dsi_msg
-    dd->ok_msg_spec[27] = ERL_DRV_TUPLE;
-    dd->ok_msg_spec[28] = 3;
+    dd->ok_msg_spec[23] = ERL_DRV_TUPLE;
+    dd->ok_msg_spec[24] = 9;
     //     } ok
-    dd->ok_msg_spec[29] = ERL_DRV_TUPLE;
-    dd->ok_msg_spec[30] = 2;
+    dd->ok_msg_spec[25] = ERL_DRV_TUPLE;
+    dd->ok_msg_spec[26] = 2;
     // } dsi_reply
-    dd->ok_msg_spec[31] = ERL_DRV_TUPLE;
-    dd->ok_msg_spec[32] = 2;
+    dd->ok_msg_spec[27] = ERL_DRV_TUPLE;
+    dd->ok_msg_spec[28] = 2;
 
     return (ErlDrvData) dd;
 }
