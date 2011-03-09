@@ -12,8 +12,8 @@ test:
 shell:
 	@erl -pa ../dsi/ebin
 
-analyze:
-	@./rebar analyze
+dialyze:
+	@./rebar dialyze
 
 checkplt:
 	@./rebar check_plt
@@ -24,4 +24,4 @@ buildplt:
 xref:
 	@./rebar xref
 
-.PHONY: all compile clean test shell analyze checkplt buildplt xref
+.PHONY: all compile clean test shell dialyze checkplt buildplt xref
