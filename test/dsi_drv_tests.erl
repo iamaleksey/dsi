@@ -47,8 +47,11 @@ dsi_drv_test_() ->
                 {with, Pid, [
                         fun test_send/1,
                         fun test_recv/1,
+                        fun test_recv_async/1,
                         fun test_grab_non_empty/1,
                         fun test_grab_empty/1,
+                        fun test_grab_async_non_empty/1,
+                        fun test_grab_async_empty/1,
                         fun test_is_congested/1,
                         fun test_link/1,
                         fun test_unlink/1
@@ -64,12 +67,29 @@ test_recv(Pid) ->
     dsi_drv:send(Pid, ?MOD_ID, ?MSG),
     ?assertEqual({ok, ?MSG}, dsi_drv:recv(Pid, ?MOD_ID)).
 
+test_recv_async(Pid) ->
+    dsi_drv:send(Pid, ?MOD_ID, ?MSG),
+    Self = self(),
+    dsi_drv:recv_async(Pid, ?MOD_ID, fun(Reply) -> Self ! Reply end),
+    ?assertEqual({ok, ?MSG}, receive Reply -> Reply end).
+
 test_grab_non_empty(Pid) ->
     dsi_drv:send(Pid, ?MOD_ID, ?MSG),
     ?assertEqual({ok, ?MSG}, dsi_drv:grab(Pid, ?MOD_ID)).
 
 test_grab_empty(Pid) ->
     ?assertEqual(empty, dsi_drv:grab(Pid, ?MOD_ID)).
+
+test_grab_async_non_empty(Pid) ->
+    dsi_drv:send(Pid, ?MOD_ID, ?MSG),
+    Self = self(),
+    dsi_drv:grab_async(Pid, ?MOD_ID, fun(Reply) -> Self ! Reply end),
+    ?assertEqual({ok, ?MSG}, receive Reply -> Reply end).
+
+test_grab_async_empty(Pid) ->
+    Self = self(),
+    dsi_drv:grab_async(Pid, ?MOD_ID, fun(Reply) -> Self ! Reply end),
+    ?assertEqual(empty, receive Reply -> Reply end).
 
 test_is_congested(Pid) ->
     ?assertEqual(false, dsi_drv:is_congested(Pid, standard)),

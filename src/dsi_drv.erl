@@ -29,7 +29,9 @@
          stop/1,
          send/3,
          recv/2,
+         recv_async/3,
          grab/2,
+         grab_async/3,
          link/1,
          unlink/1,
          is_congested/2]).
@@ -42,7 +44,9 @@
          handle_info/2,
          code_change/3]).
 
--type mod_id()  :: non_neg_integer().
+-type mod_id()        :: non_neg_integer().
+-type recv_callback() :: fun(({'ok', dsi_msg()} | 'error') -> any()).
+-type grab_callback() :: fun(({'ok', dsi_msg()} | 'empty') -> any()).
 
 -define(APP_NAME, dsi).
 -define(DRV_NAME, "dsi_drv").
@@ -57,7 +61,9 @@
 -define(DSI_STANDARD, 0).
 -define(DSI_LONG,     1).
 
--record(st, {port :: port(), call_from :: {pid(), reference()}}).
+-record(st, {port           :: port(),
+             call_from      :: {pid(), reference()},
+             async_callback :: recv_callback() | grab_callback()}).
 
 %% -------------------------------------------------------------------------
 %% API
@@ -83,10 +89,20 @@ send(Pid, ModId, Msg) ->
 recv(Pid, ModId) ->
     gen_server:call(Pid, {recv, ModId}, infinity).
 
+-spec recv_async/3 :: (pid(), mod_id(), recv_callback()) -> 'ok'.
+
+recv_async(Pid, ModId, Fun) ->
+    gen_server:call(Pid, {recv_async, ModId, Fun}, infinity).
+
 -spec grab/2 :: (pid(), mod_id()) -> {'ok', dsi_msg()} | 'empty'.
 
 grab(Pid, ModId) ->
     gen_server:call(Pid, {grab, ModId}, infinity).
+
+-spec grab_async/3 :: (pid(), mod_id(), grab_callback()) -> 'ok'.
+
+grab_async(Pid, ModId, Fun) ->
+    gen_server:call(Pid, {grab_async, ModId, Fun}, infinity).
 
 -spec link/1 :: (pid()) -> boolean().
 
@@ -138,9 +154,17 @@ handle_call({recv, ModId}, From, St) ->
     port_command(St#st.port, [?DSI_RECV, ModId]),
     {noreply, St#st{call_from = From}};
 
+handle_call({recv_async, ModId, Fun}, _From, St) ->
+    port_command(St#st.port, [?DSI_RECV, ModId]),
+    {reply, ok, St#st{async_callback = Fun}};
+
 handle_call({grab, ModId}, From, St) ->
     port_command(St#st.port, [?DSI_GRAB, ModId]),
     {noreply, St#st{call_from = From}};
+
+handle_call({grab_async, ModId, Fun}, _From, St) ->
+    port_command(St#st.port, [?DSI_GRAB, ModId]),
+    {reply, ok, St#st{async_callback = Fun}};
 
 handle_call(link, From, St) ->
     port_command(St#st.port, [?DSI_LINK]),
@@ -168,9 +192,15 @@ handle_cast(stop, St) ->
 handle_cast(Request, St) ->
     {stop, {unexpected_cast, Request}, St}.
 
-handle_info({dsi_reply, Reply}, St) ->
-    gen_server:reply(St#st.call_from, Reply),
+handle_info({dsi_reply, Reply}, #st{call_from = From} = St)
+        when From =/= undefined ->
+    gen_server:reply(From, Reply),
     {noreply, St#st{call_from = undefined}};
+
+handle_info({dsi_reply, Reply}, #st{async_callback = Fun} = St)
+        when Fun =/= undefined ->
+    Fun(Reply),
+    {noreply, St#st{async_callback = undefined}};
 
 handle_info(Info, St) ->
     {stop, {unexpected_info, Info}, St}.
