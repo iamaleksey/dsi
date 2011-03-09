@@ -57,7 +57,7 @@
 -define(DSI_STANDARD, 0).
 -define(DSI_LONG,     1).
 
--record(st, {port :: port()}).
+-record(st, {port :: port(), call_from :: {pid(), reference()}}).
 
 %% -------------------------------------------------------------------------
 %% API
@@ -119,7 +119,7 @@ init([]) ->
 terminate(_Reason, St) ->
     port_close(St#st.port).
 
-handle_call({send, ModId, Msg}, _From, St) ->
+handle_call({send, ModId, Msg}, From, St) ->
     #dsi_msg{
         type     = Type,
         id       = Id,
@@ -132,32 +132,32 @@ handle_call({send, ModId, Msg}, _From, St) ->
     } = Msg,
     Hdr = <<Type:16, Id:16, Instance:16, Src:8, Dst:8, Status:8, ErrInfo:32>>,
     port_command(St#st.port, [?DSI_SEND, ModId, Hdr, Body]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
-handle_call({recv, ModId}, _From, St) ->
+handle_call({recv, ModId}, From, St) ->
     port_command(St#st.port, [?DSI_RECV, ModId]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
-handle_call({grab, ModId}, _From, St) ->
+handle_call({grab, ModId}, From, St) ->
     port_command(St#st.port, [?DSI_GRAB, ModId]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
-handle_call(link, _From, St) ->
+handle_call(link, From, St) ->
     port_command(St#st.port, [?DSI_LINK]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
-handle_call(unlink, _From, St) ->
+handle_call(unlink, From, St) ->
     port_command(St#st.port, [?DSI_UNLINK]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
-handle_call({is_congested, Type}, _From, St) ->
+handle_call({is_congested, Type}, From, St) ->
     Byte =
         case Type of
             standard -> ?DSI_STANDARD;
             long     -> ?DSI_LONG
         end,
     port_command(St#st.port, [?DSI_IS_CONGESTED, Byte]),
-    {reply, port_reply(), St};
+    {noreply, St#st{call_from = From}};
 
 handle_call(Request, _From, St) ->
     {stop, {unexpected_call, Request}, St}.
@@ -168,17 +168,12 @@ handle_cast(stop, St) ->
 handle_cast(Request, St) ->
     {stop, {unexpected_cast, Request}, St}.
 
+handle_info({dsi_reply, Reply}, St) ->
+    gen_server:reply(St#st.call_from, Reply),
+    {noreply, St#st{call_from = undefined}};
+
 handle_info(Info, St) ->
     {stop, {unexpected_info, Info}, St}.
 
 code_change(_OldVsn, St, _Extra) ->
     {ok, St}.
-
-%% -------------------------------------------------------------------------
-%% private functions
-%% -------------------------------------------------------------------------
-
-port_reply() ->
-    receive
-        {dsi_reply, Reply} -> Reply
-    end.
