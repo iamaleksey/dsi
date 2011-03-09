@@ -1,6 +1,6 @@
 {application, dsi, [
     {description,  "DSI linked-in wrapper"},
-    {vsn,          "0.1.0"},
+    {vsn,          "0.1.1"},
     {modules,      []}, % automatically filled by rebar.
     {applications, [kernel, stdlib]}
 ]}.

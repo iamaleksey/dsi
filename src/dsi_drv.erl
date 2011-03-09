@@ -57,13 +57,14 @@
 -define(DSI_LINK,         3).
 -define(DSI_UNLINK,       4).
 -define(DSI_IS_CONGESTED, 5).
-
 -define(DSI_STANDARD, 0).
 -define(DSI_LONG,     1).
 
--record(st, {port           :: port(),
-             call_from      :: {pid(), reference()},
-             async_callback :: recv_callback() | grab_callback()}).
+-record(st, {port                :: port(),
+             call_from           :: {pid(), reference()},
+             async_callback      :: recv_callback() | grab_callback(),
+             is_stopping = false :: boolean(),
+             stop_from           :: {pid(), reference()}}).
 
 %% -------------------------------------------------------------------------
 %% API
@@ -77,7 +78,7 @@ start_link() ->
 -spec stop/1 :: (pid()) -> 'ok'.
 
 stop(Pid) ->
-    gen_server:cast(Pid, stop).
+    gen_server:call(Pid, stop, infinity).
 
 -spec send/3 :: (pid(), mod_id(), dsi_msg()) -> 'ok' | 'error'.
 
@@ -183,14 +184,21 @@ handle_call({is_congested, Type}, From, St) ->
     port_command(St#st.port, [?DSI_IS_CONGESTED, Byte]),
     {noreply, St#st{call_from = From}};
 
+handle_call(stop, From, St) ->
+    case St#st.async_callback of
+        undefined -> {stop, normal, ok, St};
+        _         -> {noreply, St#st{is_stopping = true, stop_from = From}}
+    end;
+
 handle_call(Request, _From, St) ->
     {stop, {unexpected_call, Request}, St}.
 
-handle_cast(stop, St) ->
-    {stop, normal, St};
-
 handle_cast(Request, St) ->
     {stop, {unexpected_cast, Request}, St}.
+
+handle_info({dsi_reply, _Reply}, #st{is_stopping = true} = St) ->
+    gen_server:reply(St#st.stop_from, ok),
+    {stop, normal, St};
 
 handle_info({dsi_reply, Reply}, #st{call_from = From} = St)
         when From =/= undefined ->
