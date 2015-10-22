@@ -46,7 +46,7 @@
 #define ERL_HDR_LEN 13
 
 typedef struct {
-    ErlDrvPort        port;
+    ErlDrvTermData    port;
 
     ErlDrvTermData*   ok_msg_spec;
 
@@ -109,7 +109,7 @@ recv_or_grab(DsiData* dd, unsigned char module_id, unsigned char cmd)
 
     if (msg != 0) {
         fill_ok_msg_spec(dd->ok_msg_spec, msg);
-        driver_output_term(dd->port, dd->ok_msg_spec, OK_MSG_SPEC_LEN);
+        erl_drv_output_term(dd->port, dd->ok_msg_spec, OK_MSG_SPEC_LEN);
         reset_ok_msg_spec(dd->ok_msg_spec);
         confirm_msg(msg);
     } else {
@@ -119,7 +119,7 @@ recv_or_grab(DsiData* dd, unsigned char module_id, unsigned char cmd)
             atom_spec = empty_spec;
         }
 
-        driver_output_term(dd->port, atom_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, atom_spec, ATOM_SPEC_LEN);
     }
 }
 
@@ -180,12 +180,12 @@ dsi_send(DsiData* dd, unsigned char module_id, char* buf, int len)
 
         if (GCT_send(module_id, &msg->hdr) != 0) {
             relm(&msg->hdr);
-            driver_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
+            erl_drv_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
         } else {
-            driver_output_term(dd->port, ok_spec, ATOM_SPEC_LEN);
+            erl_drv_output_term(dd->port, ok_spec, ATOM_SPEC_LEN);
         }
     } else {
-        driver_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, error_spec, ATOM_SPEC_LEN);
     }
 }
 
@@ -210,9 +210,9 @@ static void
 dsi_link(DsiData* dd)
 {
     if (GCT_link() == 0) {
-        driver_output_term(dd->port, true_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, true_spec, ATOM_SPEC_LEN);
     } else {
-        driver_output_term(dd->port, false_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, false_spec, ATOM_SPEC_LEN);
     }
 }
 
@@ -220,7 +220,7 @@ static void
 dsi_unlink(DsiData* dd)
 {
     GCT_unlink();
-    driver_output_term(dd->port, ok_spec, ATOM_SPEC_LEN);
+    erl_drv_output_term(dd->port, ok_spec, ATOM_SPEC_LEN);
 }
 
 static void
@@ -228,9 +228,9 @@ dsi_is_congested(DsiData* dd, unsigned char type)
 {
     // type == 0 (standard) or 1 (long).
     if (GCT_partition_congestion(type) == NO_CONGESTION) {
-        driver_output_term(dd->port, false_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, false_spec, ATOM_SPEC_LEN);
     } else {
-        driver_output_term(dd->port, true_spec, ATOM_SPEC_LEN);
+        erl_drv_output_term(dd->port, true_spec, ATOM_SPEC_LEN);
     }
 }
 
@@ -328,7 +328,7 @@ dsi_start(ErlDrvPort port, char* command)
     if (dd == NULL)
         return ERL_DRV_ERROR_GENERAL;
 
-    dd->port = port;
+    dd->port = driver_mk_port(port);
 
     dd->cmd = 0;
     dd->module_id = 0;
@@ -426,7 +426,7 @@ dsi_stop(ErlDrvData drv_data)
 }
 
 static void
-dsi_output(ErlDrvData drv_data, char* buf, int len)
+dsi_output(ErlDrvData drv_data, char* buf, ErlDrvSizeT len)
 {
     DsiData* dd = (DsiData*) drv_data;
 
